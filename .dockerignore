@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+.git
+.github
+terraform/.terraform
+terraform/*.tfstate
+terraform/*.tfstate.*
+README.md

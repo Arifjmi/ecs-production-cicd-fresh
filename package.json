@@ -1,0 +1,12 @@
+{
+  "name": "ecs-production-cicd-fresh",
+  "version": "1.0.0",
+  "description": "Fresh production ECS CI/CD project",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "node test.js"
+  },
+  "author": "Arif",
+  "license": "MIT"
+}
