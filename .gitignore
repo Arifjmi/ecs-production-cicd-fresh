@@ -38,3 +38,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local AWS IAM policy documents
+github-actions-trust-policy.json
+github-actions-permissions-policy.json

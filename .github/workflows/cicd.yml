@@ -1,0 +1,131 @@
+name: Production ECS CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-south-1
+  AWS_ACCOUNT_ID: "498245874320"
+
+  ECR_REPOSITORY: ecs-production-cicd-fresh-production-app
+
+  ECS_CLUSTER: ecs-production-cicd-fresh-production
+  ECS_SERVICE: ecs-production-cicd-fresh-production-service
+  ECS_TASK_FAMILY: ecs-production-cicd-fresh-production
+
+  CONTAINER_NAME: app
+
+  DOMAIN_NAME: fresh.arifcloud.xyz
+
+jobs:
+
+  build-and-deploy:
+
+    name: Build and Deploy to ECS
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # --------------------------------------------------
+      # 1. Checkout source code
+      # --------------------------------------------------
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # 2. Configure AWS using GitHub OIDC
+      # --------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::498245874320:role/ecs-production-cicd-fresh-production-github-actions
+          aws-region: ${{ env.AWS_REGION }}
+
+      # --------------------------------------------------
+      # 3. Login to Amazon ECR
+      # --------------------------------------------------
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # --------------------------------------------------
+      # 4. Set image URI
+      # --------------------------------------------------
+      - name: Set image URI
+        id: image
+        run: |
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
+          echo "Docker image:"
+          echo "${IMAGE_URI}"
+
+      # --------------------------------------------------
+      # 5. Build Docker image
+      # --------------------------------------------------
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t "${{ steps.image.outputs.image_uri }}" \
+            .
+
+      # --------------------------------------------------
+      # 6. Push Docker image to ECR
+      # --------------------------------------------------
+      - name: Push Docker image to ECR
+        run: |
+          docker push "${{ steps.image.outputs.image_uri }}"
+
+      # --------------------------------------------------
+      # 7. Render ECS task definition
+      # --------------------------------------------------
+      - name: Render ECS task definition
+        id: render-task-definition
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.image_uri }}
+
+      # --------------------------------------------------
+      # 8. Deploy ECS task definition
+      # --------------------------------------------------
+      - name: Deploy ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-definition.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      # --------------------------------------------------
+      # 9. Application health check
+      # --------------------------------------------------
+      - name: Application health check
+        run: |
+          echo "Waiting for application..."
+          sleep 10
+
+          echo "Checking application health..."
+
+          HTTP_STATUS=$(curl \
+            --silent \
+            --output /dev/null \
+            --write-out "%{http_code}" \
+            "https://${DOMAIN_NAME}/health")
+
+          echo "HTTP status: ${HTTP_STATUS}"
+
+          if [ "${HTTP_STATUS}" != "200" ]; then
+            echo "Health check failed."
+            exit 1
+          fi
+
+          echo "Application health check passed."
